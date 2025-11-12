@@ -1,0 +1,79 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: App Trocas Celular - SAM Template
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.11
+
+Resources:
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: api_handler
+      Handler: app.lambda_handler
+      CodeUri: src/api_handler/
+      MemorySize: 256
+      Environment:
+        Variables:
+          DEVICES_TABLE: !Ref DevicesTable
+          UPLOADS_BUCKET: !Ref UploadsBucket
+          PROPOSALS_QUEUE_URL: !Ref ProposalsQueueUrl
+      Events:
+        ApiProxy:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+
+  QueueProcessor:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: queue_processor
+      Handler: handler.lambda_handler
+      CodeUri: src/queue_processor/
+      MemorySize: 256
+      Environment:
+        Variables:
+          DEVICES_TABLE: !Ref DevicesTable
+          NOTIFICATIONS_TOPIC_ARN: !Ref NotificationsTopic
+      Events:
+        QueueEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt ProposalsQueue.Arn
+
+  ProposalsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: proposals_queue
+
+  DevicesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: devices
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  UploadsBucket:
+    Type: AWS::S3::Bucket
+
+  NotificationsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: app-notifications
+
+Outputs:
+  ApiUrl:
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+    Export:
+      Name: ApiUrl
+  ProposalsQueueUrl:
+    Value: !Ref ProposalsQueue
+    Export:
+      Name: ProposalsQueueUrl
